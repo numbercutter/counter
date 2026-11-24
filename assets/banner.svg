@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="counter: Give agents a seat at the counter.">
+  <rect width="1280" height="640" fill="#052E2B"/>
+  <g transform="translate(120 224) scale(3)">
+    <path d="M14 0 H46 L64 18 V50 Q64 64 50 64 H14 Q0 64 0 50 V14 Q0 0 14 0 Z" fill="#052E2B" stroke="#284B49" stroke-width="1.5"/>
+    <circle cx="32" cy="26" r="6" fill="#F472B6"/><rect x="13" y="37" width="38" height="7" rx="3.5" fill="#F472B6"/>
+  </g>
+  <text x="384" y="318" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="700" font-size="120" fill="#F472B6">counter</text>
+  <text x="388" y="386" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" fill="#8FA1A0">Give agents a seat at the counter.</text>
+  <text x="1232" y="600" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#8FA1A0" fill-opacity="0.7">a numbercutter instrument</text>
+</svg>
