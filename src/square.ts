@@ -27,6 +27,7 @@ export interface Backend {
   listLocations(): Promise<any[]>;
   searchCatalog(text: string | undefined, limit: number): Promise<any[]>;
   searchOrders(q: OrderQuery): Promise<{ orders: any[]; truncated: boolean }>;
+  listRefunds(startAt: string, endAt: string, locationIds: string[]): Promise<any[]>;
   getOrder(id: string): Promise<any | null>;
   inventoryCounts(variationIds: string[] | undefined, locationIds: string[] | undefined): Promise<any[]>;
   createCatalogItem(item: NewItem): Promise<any>;
@@ -42,7 +43,7 @@ export class SquareError extends Error {
 export function liveBackend(env = process.env): Backend {
   const token = env.SQUARE_ACCESS_TOKEN;
   if (!token) throw new Error("SQUARE_ACCESS_TOKEN is not set. Use --mock to try counter without a Square account.");
-  const base = (env.SQUARE_ENV ?? "sandbox") === "production" ? "https://connect.squareup.com" : "https://connect.squareupsandbox.com";
+  const base = env.SQUARE_BASE_URL ?? ((env.SQUARE_ENV ?? "sandbox") === "production" ? "https://connect.squareup.com" : "https://connect.squareupsandbox.com");
   const version = env.SQUARE_VERSION ?? "2025-01-23";
 
   async function call(method: string, path: string, body?: unknown) {
@@ -93,6 +94,20 @@ export function liveBackend(env = process.env): Backend {
         cursor = r.cursor;
       } while (cursor && orders.length < q.limit);
       return { orders: orders.slice(0, q.limit), truncated: Boolean(cursor) };
+    },
+    async listRefunds(startAt, endAt, locationIds) {
+      const refunds: any[] = [];
+      for (const location of locationIds) {
+        let cursor: string | undefined;
+        do {
+          const params = new URLSearchParams({ begin_time: startAt, end_time: endAt, location_id: location, sort_order: "ASC" });
+          if (cursor) params.set("cursor", cursor);
+          const r = await call("GET", `/v2/refunds?${params}`);
+          refunds.push(...(r.refunds ?? []).filter((x: any) => x.status === "COMPLETED" || x.status === "PENDING"));
+          cursor = r.cursor;
+        } while (cursor && refunds.length < 5000);
+      }
+      return refunds;
     },
     async getOrder(id) {
       try {

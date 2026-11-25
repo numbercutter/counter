@@ -1,4 +1,5 @@
 import type { Backend } from "./square";
+import { addDays, startOfDay } from "./zone";
 
 const TAX_RATE = 0.0825;
 
@@ -84,20 +85,22 @@ function money(amount: number) {
 }
 
 function ordersFor(locationId: string, day: string, items: Seed[]) {
-  const date = new Date(`${day}T00:00:00Z`);
-  const weekday = date.getUTCDay();
+  const loc = locations.find((l) => l.id === locationId);
+  if (!loc) return [];
+  const midnight = startOfDay(day, loc.timezone);
+  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
   const kiosk = locationId === "LKIOSK02";
   if (kiosk && ![0, 5, 6].includes(weekday)) return [];
   const r = rng(`${locationId}:${day}`);
   const weekend = weekday === 0 || weekday === 6;
   const base = kiosk ? 16 : 40;
   const count = Math.round(base * (weekend ? 1.2 : 1) + r() * (kiosk ? 9 : 16));
-  const openMin = kiosk ? 14 * 60 : 13 * 60;
+  const openMin = kiosk ? 8 * 60 : 7 * 60;
   const span = kiosk ? 6 * 60 : 10 * 60;
   const out = [];
   for (let n = 0; n < count; n++) {
     const minute = openMin + Math.floor(((n + r()) / count) * span);
-    const created = new Date(date.getTime() + minute * 60000 + Math.floor(r() * 60) * 1000);
+    const created = new Date(midnight + minute * 60000 + Math.floor(r() * 60) * 1000);
     const lines = [];
     const lineCount = r() < 0.55 ? 1 : r() < 0.8 ? 2 : 3;
     for (let l = 0; l < lineCount; l++) {
@@ -133,8 +136,25 @@ function ordersFor(locationId: string, day: string, items: Seed[]) {
     const tip = card && r() < 0.62 ? Math.round(subtotal * [0.1, 0.15, 0.18, 0.2][Math.floor(r() * 4)]) : 0;
     const canceled = r() < 0.02;
     const seq = String(n + 1).padStart(3, "0");
+    const id = `MOCK-${locationId}-${day.replaceAll("-", "")}-${seq}`;
+    const refunds = [];
+    const rr = rng(`refund:${id}`);
+    if (!canceled && rr() < 0.025) {
+      const full = rr() < 0.6;
+      const amount = full ? subtotal + tip : lines[0].total_money.amount;
+      const delay = rr() < 0.7 ? 20 + Math.floor(rr() * 200) : 24 * 60 + Math.floor(rr() * 120);
+      refunds.push({
+        id: `RF-${id}`,
+        order_id: id,
+        location_id: locationId,
+        status: "COMPLETED",
+        reason: full ? "Wrong order" : "Item unavailable",
+        amount_money: money(amount),
+        created_at: new Date(created.getTime() + delay * 60000).toISOString(),
+      });
+    }
     out.push({
-      id: `MOCK-${locationId}-${day.replaceAll("-", "")}-${seq}`,
+      id,
       location_id: locationId,
       state: canceled ? "CANCELED" : "COMPLETED",
       source: { name: kiosk ? "Square POS (Kiosk)" : "Square POS" },
@@ -146,17 +166,16 @@ function ordersFor(locationId: string, day: string, items: Seed[]) {
       total_tip_money: money(tip),
       total_money: money(subtotal + tip),
       tenders: canceled ? [] : [{ type: card ? "CARD" : "CASH", amount_money: money(subtotal + tip), tip_money: money(tip) }],
+      refunds: refunds.length ? refunds : undefined,
     });
   }
   return out;
 }
 
-function eachDay(startAt: string, endAt: string) {
+function eachDay(startAt: string, endAt: string, before = 0) {
   const days: string[] = [];
-  const start = new Date(startAt);
-  const end = new Date(endAt);
-  start.setUTCHours(0, 0, 0, 0);
-  for (let d = start; d < end; d = new Date(d.getTime() + 86400000)) days.push(d.toISOString().slice(0, 10));
+  const last = new Date(Date.parse(endAt) + 86400000).toISOString().slice(0, 10);
+  for (let d = addDays(new Date(startAt).toISOString().slice(0, 10), -1 - before); d <= last; d = addDays(d, 1)) days.push(d);
   return days;
 }
 
@@ -209,6 +228,19 @@ export function mockBackend(): Backend {
         .filter((o) => !q.states?.length || q.states.includes(o.state))
         .sort((a, b) => a.created_at.localeCompare(b.created_at));
       return { orders: filtered.slice(0, q.limit), truncated: filtered.length > q.limit };
+    },
+    async listRefunds(startAt, endAt, locationIds) {
+      const start = Date.parse(startAt);
+      const end = Date.parse(endAt);
+      const out = [];
+      for (const day of eachDay(startAt, endAt, 2)) {
+        for (const loc of locationIds) {
+          for (const o of ordersFor(loc, day, seeds)) {
+            for (const r of o.refunds ?? []) if (Date.parse(r.created_at) >= start && Date.parse(r.created_at) < end) out.push(r);
+          }
+        }
+      }
+      return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
     },
     async getOrder(id) {
       const m = /^MOCK-(\w+)-(\d{4})(\d{2})(\d{2})-\d{3}$/.exec(id);
